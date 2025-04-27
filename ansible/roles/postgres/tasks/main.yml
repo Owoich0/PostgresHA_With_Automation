@@ -1,0 +1,48 @@
+
+- name: Add PostgreSQL Yum repo (Rocky & RHEL)
+  yum:
+    name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+    state: present
+    disable_gpg_check: yes
+
+- name: Install PostgreSQL and contrib (Rocky & RHEL)
+  when: ansible_facts['os_family'] == "RedHat"
+  dnf:
+    name:
+      - postgresql{{ postgresql_version }}
+      - postgresql{{ postgresql_version }}-server
+      - postgresql{{ postgresql_version }}-contrib
+    state: present
+
+
+
+- name: Disable built-in PostgreSQL module (Rocky & RHEL)
+  when: ansible_facts['os_family'] == "RedHat"
+  command: dnf -qy module disable postgresql
+  ignore_errors: true
+
+- name: Disable PostgreSQL service
+  systemd:
+    name: postgresql-{{ postgresql_version }}
+    enabled: false
+    state: stopped
+  ignore_errors: true
+
+- name: Ensure data mount is owned by postgres
+  file:
+    path: /var/lib/pgsql/data
+    owner: postgres
+    group: postgres
+    recurse: yes
+    state: directory
+
+  
+
+- name: Ensure WAL archive mount and subdir is owned by postgres
+  file:
+    path: /var/lib/pgsql/wal/archive
+    owner: postgres
+    group: postgres
+    recurse: yes
+    state: directory
+

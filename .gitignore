@@ -1,0 +1,5 @@
+**/.terraform
+**/cluster_output
+**/terraform.tfstate
+**/.vscode
+

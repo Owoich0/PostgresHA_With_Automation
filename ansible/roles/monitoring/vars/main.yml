@@ -1,0 +1,3 @@
+prometheus_dir: /etc/prometheus
+grafana_dir: /etc/grafana
+grafana_dashboards_dir: /var/lib/grafana/dashboards

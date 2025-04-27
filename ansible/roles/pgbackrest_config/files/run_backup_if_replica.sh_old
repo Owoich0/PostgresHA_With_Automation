@@ -1,0 +1,129 @@
+#!/bin/bash
+
+CONFIG_FILE="/etc/pgbackrest/pgbackrest.conf"
+PGDATA_PATH="/var/lib/pgsql/data/pgdata"
+STANZA_NAME="main"
+
+# --- Gather Cluster Info -------------------------------------
+
+LOCAL_IP=$(hostname -I | awk '{print $1}')
+IS_REPLICA=$(psql -U postgres -tAc "SELECT pg_is_in_recovery();" | tr -d '[:space:]')
+LOCAL_PATRONI_NAME=$(curl -s http://${LOCAL_IP}:8008 | jq -r '.patroni.name')
+CLUSTER_JSON=$(curl -s http://${LOCAL_IP}:8008/cluster)
+LEADER_NAME=$(echo "$CLUSTER_JSON" | jq -r '.members[] | select(.role == "leader") | .name')
+LEADER_IP=$(echo "$CLUSTER_JSON" | jq -r --arg name "$LEADER_NAME" '.members[] | select(.name == $name) | .host')
+
+REPLICA_NODES=()
+while read -r row; do
+  ROLE=$(echo "$row" | jq -r '.role')
+  NAME=$(echo "$row" | jq -r '.name')
+  [ "$ROLE" = "replica" ] && REPLICA_NODES+=("$NAME")
+done < <(echo "$CLUSTER_JSON" | jq -c '.members[]')
+
+IFS=$'\n' SORTED_REPLICAS=($(sort <<<"${REPLICA_NODES[*]}"))
+PRIMARY_REPLICA="${SORTED_REPLICAS[0]}"
+
+# --- Load Config Values ---------------------------------------
+
+get_config_value() {
+  grep -E "^$1\s*=" "$CONFIG_FILE" | awk -F= '{print $2}' | xargs
+}
+
+REPO1_TYPE=$(get_config_value "repo1-type")
+REPO1_PATH=$(get_config_value "repo1-path")
+REPO1_BUCKET=$(get_config_value "repo1-s3-bucket")
+REPO1_ENDPOINT=$(get_config_value "repo1-s3-endpoint")
+REPO1_REGION=$(get_config_value "repo1-s3-region")
+REPO1_KEY=$(get_config_value "repo1-s3-key")
+REPO1_SECRET=$(get_config_value "repo1-s3-key-secret")
+REPO1_VERIFY_TLS=$(get_config_value "repo1-storage-verify-tls")
+REPO1_VERIFY_TLS="${REPO1_VERIFY_TLS:-y}"
+REPO1_RET_FULL=$(get_config_value "repo1-retention-full")
+REPO1_RET_DIFF=$(get_config_value "repo1-retention-diff")
+LOG_LEVEL_CONSOLE=$(get_config_value "log-level-console")
+LOG_LEVEL_FILE=$(get_config_value "log-level-file")
+LOG_PATH=$(get_config_value "log-path")
+
+# --- Update Leader Config -------------------------------------
+
+if [ "$LOCAL_IP" != "$LEADER_IP" ]; then
+  echo "[INFO] Updating leader config on $LEADER_IP..."
+
+  ssh -o StrictHostKeyChecking=no postgres@$LEADER_IP "bash -s" <<EOF
+sudo tee /etc/pgbackrest/pgbackrest.conf > /dev/null <<'EOCONF'
+[global]
+repo1-type=${REPO1_TYPE}
+repo1-path=${REPO1_PATH}
+repo1-s3-bucket=${REPO1_BUCKET}
+repo1-s3-endpoint=${REPO1_ENDPOINT}
+repo1-s3-region=${REPO1_REGION}
+repo1-s3-key=${REPO1_KEY}
+repo1-s3-key-secret=${REPO1_SECRET}
+repo1-storage-verify-tls=${REPO1_VERIFY_TLS}
+repo1-retention-full=${REPO1_RET_FULL}
+repo1-retention-diff=${REPO1_RET_DIFF}
+log-level-console=${LOG_LEVEL_CONSOLE}
+log-level-file=${LOG_LEVEL_FILE}
+log-path=${LOG_PATH}
+start-fast=y
+compress-level=3
+process-max=4
+delta=y
+
+[${STANZA_NAME}]
+pg1-path=${PGDATA_PATH}
+pg1-port=5432
+EOCONF
+EOF
+fi
+
+# --- Update Local Replica Config ------------------------------
+
+echo "[INFO] Updating local replica config..."
+{
+  echo "[global]"
+  echo "repo1-type=${REPO1_TYPE}"
+  echo "repo1-path=${REPO1_PATH}"
+  echo "repo1-s3-bucket=${REPO1_BUCKET}"
+  echo "repo1-s3-endpoint=${REPO1_ENDPOINT}"
+  echo "repo1-s3-region=${REPO1_REGION}"
+  echo "repo1-s3-key=${REPO1_KEY}"
+  echo "repo1-s3-key-secret=${REPO1_SECRET}"
+  echo "repo1-storage-verify-tls=${REPO1_VERIFY_TLS}"
+  echo "repo1-retention-full=${REPO1_RET_FULL}"
+  echo "repo1-retention-diff=${REPO1_RET_DIFF}"
+  echo "log-level-console=${LOG_LEVEL_CONSOLE}"
+  echo "log-level-file=${LOG_LEVEL_FILE}"
+  echo "log-path=${LOG_PATH}"
+  echo "start-fast=y"
+  echo "compress-level=3"
+  echo "process-max=4"
+  echo "delta=y"
+  echo ""
+  echo "[${STANZA_NAME}]"
+  echo "pg1-host=${LEADER_IP}"
+  echo "pg2-path=${PGDATA_PATH}"
+  echo "pg2-port=5432"
+  echo "pg1-path=${PGDATA_PATH}"
+  echo "pg1-port=5432"
+} > "$CONFIG_FILE"
+
+# --- Stanza Create if Needed ----------------------------------
+
+if [ "$IS_REPLICA" = "t" ] && [ "$LOCAL_PATRONI_NAME" = "$PRIMARY_REPLICA" ]; then
+  if [ ! -f "/var/lib/pgbackrest/backup/${STANZA_NAME}/backup.info" ]; then
+    echo "[INFO] Running stanza-create on $LOCAL_PATRONI_NAME..."
+    /usr/bin/pgbackrest --stanza=$STANZA_NAME stanza-create
+  else
+    echo "[SKIP] Stanza already exists on $LOCAL_PATRONI_NAME."
+  fi
+fi
+
+# --- Run the Backup -------------------------------------------
+
+if [ "$IS_REPLICA" = "t" ] && [ "$LOCAL_PATRONI_NAME" = "$PRIMARY_REPLICA" ]; then
+  echo "[INFO] Running pgBackRest backup on $LOCAL_PATRONI_NAME..."
+  /usr/bin/pgbackrest --stanza=$STANZA_NAME --type=${1:-full} backup --backup-standby=y
+else
+  echo "[SKIP] Not the designated replica for backup on $LOCAL_PATRONI_NAME."
+fi

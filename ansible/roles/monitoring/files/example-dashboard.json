@@ -1,0 +1,30 @@
+{
+    "__inputs": [],
+    "__requires": [],
+    "annotations": {
+      "list": []
+    },
+    "editable": true,
+    "gnetId": null,
+    "graphTooltip": 0,
+    "id": null,
+    "iteration": 1650220034770,
+    "links": [],
+    "panels": [],
+    "schemaVersion": 27,
+    "style": "dark",
+    "tags": ["PostgreSQL"],
+    "templating": {
+      "list": []
+    },
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "title": "Example PostgreSQL Dashboard",
+    "uid": "example-postgres",
+    "version": 1
+  }
+  

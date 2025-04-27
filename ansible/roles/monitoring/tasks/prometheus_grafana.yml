@@ -1,0 +1,136 @@
+- name: Run only on the third replica
+  assert:
+    that:
+      - inventory_hostname == (groups['postgresql'] | sort)[2]
+    fail_msg: "This monitoring role is intended only for the third Patroni replica."
+    success_msg: "Running monitoring setup on {{ inventory_hostname }}."
+
+# PROMETHEUS
+- name: Create Prometheus user
+  user:
+    name: prometheus
+    shell: /sbin/nologin
+
+- name: Create directories for Prometheus
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+  loop:
+    - /etc/prometheus
+    - /var/lib/prometheus
+    - /opt/prometheus
+
+- name: Download Prometheus tarball
+  get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v2.48.0/prometheus-2.48.0.linux-amd64.tar.gz"
+    dest: /tmp/prometheus.tar.gz
+
+- name: Extract Prometheus
+  unarchive:
+    src: /tmp/prometheus.tar.gz
+    dest: /opt/prometheus
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+
+- name: Move Prometheus binaries to /usr/local/bin
+  copy:
+    remote_src: yes
+    src: "/opt/prometheus/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+  loop:
+    - prometheus
+    - promtool
+
+- name: Deploy Prometheus configuration from template
+  template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+
+
+
+- name: Deploy Prometheus systemd service
+  template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd and start Prometheus
+  systemd:
+    daemon_reload: true
+    name: prometheus
+    enabled: true
+    state: started
+
+# GRAFANA
+- name: Install Grafana
+  become: true
+  shell: |
+    wget -q -O /tmp/grafana.rpm https://dl.grafana.com/oss/release/grafana-10.3.1-1.x86_64.rpm
+    yum localinstall -y /tmp/grafana.rpm
+  args:
+    creates: /usr/sbin/grafana-server
+
+- name: Deploy grafana.ini configuration
+  become: true
+  template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+    mode: '0644'
+  notify: Restart Grafana
+
+- name: Create provisioning folders
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: '0755'
+  loop:
+    - /etc/grafana/provisioning
+    - /etc/grafana/provisioning/dashboards
+    - /etc/grafana/provisioning/datasources
+    - /var/lib/grafana/dashboards
+
+- name: Upload Prometheus datasource config
+  become: true
+  template:
+    src: datasources.yml.j2
+    dest: /etc/grafana/provisioning/datasources/datasources.yml
+    mode: '0644'
+  notify: Restart Grafana
+
+- name: Upload dashboards provisioning config
+  become: true
+  template:
+    src: dashboards.yml.j2
+    dest: /etc/grafana/provisioning/dashboards/dashboards.yml
+    mode: '0644'
+  notify: Restart Grafana
+
+- name: Deploy Patroni Grafana dashboard
+  become: true
+  copy:
+    src: patroni-dashboard.json
+    dest: /var/lib/grafana/dashboards/patroni-dashboard.json
+    owner: grafana
+    group: grafana
+    mode: '0644'
+  notify: Restart Grafana
+
+
+- name: Ensure Grafana is enabled and running
+  become: true
+  service:
+    name: grafana-server
+    enabled: true
+    state: started

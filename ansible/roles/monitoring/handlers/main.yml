@@ -1,0 +1,18 @@
+- name: Restart Prometheus
+  become: true
+  service:
+    name: prometheus
+    state: restarted
+
+- name: Restart Grafana
+  become: true
+  service:
+    name: grafana-server
+    state: restarted
+
+- name: Restart Postgres Exporter
+  become: true
+  systemd:
+    name: postgres_exporter
+    state: restarted
+    daemon_reload: yes

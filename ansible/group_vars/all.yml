@@ -1,0 +1,51 @@
+postgresql_version: "14"
+etcd_version: "3.5.17"
+
+postgres_data_device: "/dev/nvme2n1"
+postgres_wal_device: "/dev/nvme0n1"
+data_mount_point: "/var/lib/pgsql/data"
+wal_mount_point: "/var/lib/pgsql/wal"
+
+##patroni_superuser_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits,@#_+!') }}"
+##patroni_replication_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits,@#_+!') }}"
+
+patroni_superusername: postgres
+patroni_superuser_password: "33uuFHbYz3XgTYOQl"
+patroni_replication_password: "RrBaCtTBEW6VxDvRKZBcKlVIz"
+patroni_replication_user: "replicator"
+patroni_replication_username: replicator 
+
+keepalived_auth_pass: TrO6g7i0PkeN24NQ
+
+keepalived_virtual_ip: "{{ hostvars[groups['postgresql'][0]].private_ip | regex_replace('\\d+$', '110') }}"
+
+haproxy_listen_port: 5433
+postgres_port: 5432
+
+
+pgbackrest_s3_bucket: terra-remote-backend-s3
+pgbackrest_s3_endpoint: s3.amazonaws.com
+pgbackrest_s3_region: us-east-1
+pgbackrest_s3_verify_ssl: y
+pgbackrest_retention_full: 2
+pgbackrest_retention_diff: 7
+pgbackrest_repo_type: s3
+
+pgbackrest_repo_path: /var/lib/pgsql/wal
+
+
+
+aws_access_key_id: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+aws_secret_access_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+
+exporter_password: samplepassword
+
+monitoring_user: postgres_exporter
+monitoring_password: exporter_password
+
+grafana_admin_user: admin
+grafana_admin_password: admin
+
+control_node_ip: "{{ lookup('url', 'https://api.ipify.org') }}"
+
+cluster_output_summary: {}

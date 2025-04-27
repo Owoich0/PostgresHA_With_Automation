@@ -1,0 +1,87 @@
+- name: PostgreSQL HA Cluster Setup
+  hosts: postgresql
+  become: true
+  vars_files:
+    - group_vars/all.yml
+  roles:
+    - common
+    - postgres
+
+
+- name: PostgreSQL HA Cluster Setup
+  hosts: postgresql
+  become: true
+  vars_files:
+    - group_vars/all.yml
+  roles:
+    - etcd
+
+- name: Etcd prepare 
+  hosts: postgresql
+  become: true
+  vars_files:
+    - group_vars/all.yml
+  tasks:
+    - import_role:
+        name: etcd
+        tasks_from: prepare
+
+- name: Etcd start 
+  hosts: postgresql
+  become: true
+  vars_files:
+    - group_vars/all.yml
+  tasks:
+    - import_role:
+        name: etcd
+        tasks_from: start
+
+- name: Etcd health check (sequential)
+  hosts: postgresql
+  become: true
+  serial: 1
+  vars_files:
+    - group_vars/all.yml
+  tasks:
+    - import_role:
+        name: etcd
+        tasks_from: health
+
+- name: Get public IP of control node (for external access)
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Set control_node_ip from external API
+      delegate_to: localhost
+      run_once: true
+      set_fact:
+        control_node_ip: "{{ lookup('url', 'https://api.ipify.org') }}"
+
+
+
+- name: PostgreSQL HA Cluster Setup (patroni + haproxy + keepalived)
+  hosts: postgresql
+  become: true
+  vars_files:
+    - group_vars/all.yml
+  roles:
+    - pgbackrest_install
+    - patroni
+    - haproxy
+    - keepalived
+    - pgbackrest_config
+
+    
+- name: Setup monitoring
+  hosts: postgresql
+  vars_files:
+    - group_vars/all.yml
+  become: true
+  roles:
+    - monitoring
+
+- name: Post-cluster summary
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - include_tasks: post_tasks.yml

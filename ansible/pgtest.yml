@@ -1,0 +1,23 @@
+- name: PostgreSQL HA Cluster Setup (patroni + haproxy + keepalived)
+  hosts: postgresql
+  become: true
+  vars_files:
+    - group_vars/all.yml
+  roles:
+    - pgbackrest_config
+    - haproxy
+    - keepalived
+
+- name: Setup monitoring
+  hosts: postgresql
+  vars_files:
+    - group_vars/all.yml
+  become: true
+  roles:
+    - monitoring
+
+- name: Post-cluster summary
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - include_tasks: post_tasks.yml

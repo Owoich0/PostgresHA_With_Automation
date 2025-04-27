@@ -1,0 +1,16 @@
+- name: Install pgBackRest
+  package:
+    name: pgbackrest
+    state: present
+
+- name: Create pgBackRest directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0750'
+  loop:
+    - /etc/pgbackrest
+    - /var/log/pgbackrest
+

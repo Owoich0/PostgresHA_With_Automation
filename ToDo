@@ -1,0 +1,122 @@
+1. Terraform Infrastructure Setup
+Files:
+
+main.tf, variables.tf, outputs.tf, terraform.tfvars
+
+Steps:
+
+Define all variable parameters (ami, instance_type, data_volume_size, wal_volume_size, etc.)
+
+Create:
+
+VPC, Subnet, IGW, Route Table
+
+Security Groups (SSH, Patroni, PostgreSQL, etcd, HAProxy)
+
+EC2 Instances (3 nodes)
+
+EBS volumes:
+
+/dev/xvdf → Data volume (e.g., 50GB)
+
+/dev/xvdg → WAL volume (e.g., 20GB)
+
+Inject user_data to format/mount /dev/nvme1n1 and /dev/nvme2n1 on /var/lib/pgsql/wal and /var/lib/pgsql/data
+
+Generate dynamic inventory using instance metadata
+
+Run Ansible using null_resource local-exec
+
+2. Ansible Playbook Structure
+Roles:
+
+common
+
+etcd
+
+postgres
+
+patroni
+
+haproxy
+
+keepalived
+
+common
+Install base packages (python3, xfsprogs, curl, etc.)
+
+Set hosts entries for all nodes
+
+Identify disks dynamically by volume size
+
+Format + mount:
+
+Data → /var/lib/pgsql/data/pgdata
+
+WAL → /var/lib/pgsql/wal
+
+Set directory ownership to postgres
+
+Create /var/lib/pgsql_stats_tmp, /var/run/postgresql
+
+etcd
+Install etcd
+
+Configure etcd cluster (static)
+
+Start + enable service
+
+postgres
+Add PostgreSQL Yum repo
+
+Install PostgreSQL 14
+
+Ensure postgres user exists
+
+Disable postgresql systemd service (Patroni will manage it)
+
+patroni
+Install Patroni and dependencies (including psycopg2-binary)
+
+Create /etc/patroni/config.yml from dynamic template
+
+Set variables:
+
+patroni_superuser_password
+
+patroni_replication_user + password
+
+postgres_port, wal_mount_point, data_mount_point
+
+Handle potential bootstrap failure (clean stale pgdata)
+
+Start + enable Patroni under the postgres user
+
+haproxy
+Install HAProxy
+
+Configure to load balance Patroni on port 5432 via API check on :8008
+
+Reload + enable HAProxy
+
+keepalived
+Install Keepalived
+
+Setup virtual IP (VIP) on first node, ensure failover
+
+3. Failover & Replication Strategy
+synchronous_mode: true
+
+synchronous_node_count: 2
+
+Replication via basebackup
+
+Archiving via:
+
+archive_command: 'cp %p {{ wal_mount_point }}/archive/%f'
+recovery_conf:
+  restore_command: 'cp {{ wal_mount_point }}/archive/%f %p'
+HAProxy monitors Patroni API to forward traffic only to leader
+
+Replicas are hot-standby and read-only
+

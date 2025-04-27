@@ -1,0 +1,14 @@
+[Unit]
+Description=PostgreSQL Exporter
+After=network.target
+
+[Service]
+User=postgres
+Group=postgres
+Environment=DATA_SOURCE_NAME=postgresql://{{ patroni_superusername }}:{{ patroni_superuser_password }}@localhost:5432/postgres?sslmode=disable
+ExecStart=/usr/local/bin/postgres_exporter
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

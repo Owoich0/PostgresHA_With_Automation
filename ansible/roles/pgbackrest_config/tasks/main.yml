@@ -1,0 +1,86 @@
+- name: Get local private IP
+  ansible.builtin.set_fact:
+    local_ip: "{{ hostvars[inventory_hostname]['private_ip'] }}"
+
+- name: Get Patroni leader IP using private IP
+  ansible.builtin.shell: |
+    curl -s http://{{ local_ip }}:8008/cluster | jq -r '.members[] | select(.role == "leader") | .host'
+  register: leader_ip_cmd
+  changed_when: false
+
+- name: Set fact for leader_ip
+  ansible.builtin.set_fact:
+    leader_ip: "{{ leader_ip_cmd.stdout }}"
+
+- name: Configure pgBackRest for S3
+  template:
+    src: pgbackrest.conf.j2
+    dest: /etc/pgbackrest/pgbackrest.conf
+    owner: postgres
+    group: postgres
+    mode: '0640'
+
+- name: Copy backup script
+  copy:
+    src: run_backup_if_replica.sh
+    dest: /usr/local/bin/run_backup_if_replica.sh
+    mode: '0755'
+    owner: postgres
+    group: postgres
+
+- name: Schedule full weekly backups
+  cron:
+    name: "Weekly full backup"
+    user: postgres
+    job: '/usr/local/bin/run_backup_if_replica.sh full >> /var/log/pgbackrest/full_$(date +\%F).log 2>&1'
+    minute: "0"
+    hour: "1"
+    weekday: "0"
+
+- name: Schedule daily incremental backups
+  cron:
+    name: "Daily incremental backup"
+    user: postgres
+    job: '/usr/local/bin/run_backup_if_replica.sh incr >> /var/log/pgbackrest/incr_$(date +\%F).log 2>&1'
+    minute: "0"
+    hour: "1"
+    weekday: "1-6"
+
+- name: Cleanup old pgBackRest logs
+  cron:
+    name: "Cleanup old pgBackRest logs"
+    user: postgres
+    job: 'find /var/log/pgbackrest/ -type f -name "*.log" -mtime +14 -delete'
+    minute: "0"
+    hour: "2"
+
+
+# - name: Check if this node is a replica
+#   become: true
+#   become_user: postgres
+#   command: psql -tAc "SELECT pg_is_in_recovery();"
+#   register: is_replica
+#   changed_when: false
+
+# - name: Create pgBackRest stanza (only on designated replica)
+#   become: true
+#   become_user: postgres
+#   command: /usr/bin/pgbackrest --stanza=main stanza-create
+#   when:
+#     - is_replica.stdout == 't'
+#     - inventory_hostname == (groups['postgresql'] | sort)[0]
+#   register: stanza_result
+#   failed_when:
+#     - stanza_result.rc != 0
+#     - "'already exists' not in stanza_result.stdout"
+
+
+- name: Create .pgpass file for postgres user
+  ansible.builtin.copy:
+    dest: /var/lib/pgsql/.pgpass
+    content: "*:*:*:postgres:{{ patroni_superuser_password }}"
+    owner: postgres
+    group: postgres
+    mode: '0600'
+
+

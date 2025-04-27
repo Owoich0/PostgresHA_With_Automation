@@ -1,0 +1,42 @@
+---
+
+- name: Create postgres_exporter user
+  become: true
+  become_user: postgres
+  postgresql_user:
+    name: postgres_exporter
+    password: "{{ exporter_password }}"
+    role_attr_flags: LOGIN
+  when: inventory_hostname == (groups['postgresql'] | first)
+
+- name: Download PostgreSQL exporter
+  become: true
+  unarchive:
+    src: https://github.com/prometheus-community/postgres_exporter/releases/download/v0.15.0/postgres_exporter-0.15.0.linux-amd64.tar.gz
+    dest: /opt/
+    remote_src: yes
+    creates: /opt/postgres_exporter-0.15.0.linux-amd64/postgres_exporter
+
+- name: Move postgres_exporter binary to /usr/local/bin
+  become: true
+  copy:
+    remote_src: yes
+    src: /opt/postgres_exporter-0.15.0.linux-amd64/postgres_exporter
+    dest: /usr/local/bin/postgres_exporter
+    mode: '0755'
+
+
+- name: Create exporter systemd service
+  become: true
+  template:
+    src: postgres_exporter.service.j2
+    dest: /etc/systemd/system/postgres_exporter.service
+    mode: '0644'
+  notify: Restart Postgres Exporter
+
+- name: Start and enable postgres_exporter
+  become: true
+  systemd:
+    name: postgres_exporter
+    enabled: true
+    state: started

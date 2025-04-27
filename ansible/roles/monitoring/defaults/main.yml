@@ -1,0 +1,11 @@
+postgres_exporter_user: "postgres"
+
+prometheus_port: 9090
+grafana_port: 3000
+
+
+prometheus_version: "2.52.0"
+grafana_version: "10.2.2"
+postgres_exporter_version: "0.15.0"
+monitoring_user: "monitoring"
+exporter_port: 9187

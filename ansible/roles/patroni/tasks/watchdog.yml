@@ -1,0 +1,49 @@
+- name: Ensure watchdog package is installed
+  become: true
+  package:
+    name: watchdog
+    state: present
+
+- name: Enable softdog kernel module
+  become: true
+  modprobe:
+    name: softdog
+    state: present
+
+- name: Persist softdog module loading on boot
+  become: true
+  copy:
+    content: "softdog\n"
+    dest: /etc/modules-load.d/watchdog.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Ensure /dev/watchdog exists
+  become: true
+  stat:
+    path: /dev/watchdog
+  register: watchdog_device
+
+- name: Fail if /dev/watchdog is not present
+  become: true
+  fail:
+    msg: "/dev/watchdog was not found after loading softdog."
+  when: not watchdog_device.stat.exists
+
+- name: Set permissions for /dev/watchdog
+  become: true
+  file:
+    path: /dev/watchdog
+    mode: '0660'
+    owner: root
+    group: postgres
+
+
+- name: Ensure system watchdog service is disabled
+  become: true
+  systemd:
+    name: watchdog
+    enabled: false
+    state: stopped
+  ignore_errors: true

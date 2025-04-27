@@ -1,0 +1,7 @@
+- name: Setup PostgreSQL Exporter
+  include_tasks: pg_exporter.yml
+
+
+- name: Setup Prometheus and Grafana (THIRD NODE ONLY)
+  include_tasks: prometheus_grafana.yml
+  when: inventory_hostname == (groups['postgresql'] | sort)[2]

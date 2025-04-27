@@ -1,0 +1,40 @@
+[server]
+protocol = http
+http_port = 3000
+enable_gzip = true
+root_url = http://{{ inventory_hostname }}:3000/
+
+[security]
+admin_user = {{ grafana_admin_user }}
+admin_password = {{ grafana_admin_password }}
+
+[auth.anonymous]
+enabled = false
+
+[users]
+default_theme = dark
+
+[database]
+type = sqlite3
+path = grafana.db
+
+[analytics]
+reporting_enabled = false
+check_for_updates = true
+
+[log]
+mode = console
+level = info
+
+[dashboards.json]
+enabled = true
+path = /etc/grafana/provisioning/dashboards
+
+[datasources]
+enabled = true
+
+[alerting]
+enabled = false
+
+[unified_alerting]
+enabled = true

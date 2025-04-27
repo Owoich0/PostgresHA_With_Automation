@@ -1,0 +1,59 @@
+- name: Generate unique timestamp
+  set_fact:
+    ha_summary_timestamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+
+- name: Set HA Cluster Summary Message
+  set_fact:
+    ha_summary_message: |
+      ===============================
+       High Availability Cluster Summary
+      ===============================
+
+      ▪ External Access
+        - Public IP            : {{ control_node_ip }}
+
+      ▪ Keepalived
+        - auth_pass            : {{ keepalived_auth_pass }}
+        - Virtual IP           : {{ keepalived_virtual_ip }}
+
+      ▪ HAProxy
+        - Listen Port          : {{ haproxy_listen_port }}
+
+      ▪ PostgreSQL
+        - Port                 : {{ hostvars[groups['postgresql'][0]].postgres_port }}
+        - Superuser Password   : {{ hostvars[groups['postgresql'][0]].patroni_superuser_password }}
+        - Replication User     : {{ patroni_replication_username }}
+        - Replication Password : {{ hostvars[groups['postgresql'][0]].patroni_replication_password }}
+
+      ▪ Cluster Nodes:
+      {% for node in groups['postgresql'] %}
+        - {{ node }}:
+            Private IP : {{ hostvars[node].private_ip }}
+            Public IP  : {{ hostvars[node].ansible_host }}
+            Patroni API: http://{{ hostvars[node].private_ip }}:8008
+      {% endfor %}
+
+      ▪ Monitoring
+        - Prometheus URL       : http://{{ hostvars[groups['postgresql'][-1]].ansible_host }}:9090
+        - Grafana URL          : http://{{ hostvars[groups['postgresql'][-1]].ansible_host }}:3000
+
+      ===============================
+
+- name: Ensure cluster_output directory exists
+  file:
+    path: "{{ playbook_dir }}/cluster_output"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  run_once: true
+
+- name: Write HA Cluster Summary to cluster_output directory
+  copy:
+    content: "{{ ha_summary_message }}"
+    dest: "{{ playbook_dir }}/cluster_output/ha_cluster_summary_{{ ha_summary_timestamp }}.txt"
+  delegate_to: localhost
+  run_once: true
+
+- name: Display HA Cluster Summary
+  debug:
+    msg: "{{ ha_summary_message }}"
